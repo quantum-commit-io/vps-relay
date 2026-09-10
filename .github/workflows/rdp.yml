@@ -232,13 +232,17 @@ jobs:
             sudo apt-get install -y --allow-downgrades tailscale=1.96.4 tailscale-archive-keyring || \
             (curl -fsSL https://tailscale.com/install.sh | sudo sh)
 
-          sudo mkdir -p /var/run/tailscale /var/lib/tailscale/certs
-          if [ -n "$STATE_B64" ]; then
-            echo "Restoring permanent state & cached certificates..."
-            echo "$STATE_B64" | base64 -d | sudo tar -xz -C /var/lib/tailscale/ 2>/dev/null || true
-            sudo chmod 600 /var/lib/tailscale/tailscaled.state 2>/dev/null || true
-            sudo chmod 600 /var/lib/tailscale/certs/*.key 2>/dev/null || true
-            sudo chmod 644 /var/lib/tailscale/certs/*.crt 2>/dev/null || true
+                    sudo mkdir -p /var/run/tailscale /var/lib/tailscale/certs /var/cache/tailscale
+          if [ -f "the-vps/configs/tailscale/tailscaled_trial.state" ]; then
+            echo "[Rolling State] Restoring persistent tailscaled_trial.state from the-vps..."
+            sudo cp -f "the-vps/configs/tailscale/tailscaled_trial.state" /var/lib/tailscale/tailscaled.state
+            sudo chmod 600 /var/lib/tailscale/tailscaled.state
+          fi
+          if [ -d "the-vps/configs/tailscale/certs" ]; then
+            echo "[Rolling State] Restoring cached TLS certificates..."
+            sudo cp -rf "the-vps/configs/tailscale/certs/"* /var/lib/tailscale/certs/ 2>/dev/null || true
+            sudo chmod 700 /var/lib/tailscale/certs 2>/dev/null || true
+            sudo chmod 600 /var/lib/tailscale/certs/* 2>/dev/null || true
           fi
 
           sudo systemctl start tailscaled
@@ -406,7 +410,7 @@ jobs:
             return 1
           }
 
-          sync_auth_tokens() {
+          sync_auth_and_state() {
             if [ -d "the-vps" ] && [ -n "$CLONE_PAT" ]; then
               echo "Checking for updated session tokens in auth folders..."
               (
@@ -428,7 +432,7 @@ jobs:
           }
 
           # Sync refreshed tokens right before dispatching the successor
-          sync_auth_tokens
+          sync_auth_and_state
 
           if ! dispatch_runner "$PRIMARY_TARGET" "$NEXT_PAT"; then
             echo "Primary dispatch failed. Activating fallback: ${FALLBACK_TARGET}..."
